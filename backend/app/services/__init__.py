@@ -20,6 +20,7 @@ from app.services.quality_check import QualityCheckService
 from app.services.robot_verify import RobotVerifyService
 from app.services.delivery_pipe import DeliveryPipeService
 from app.services.scalable_pool import ScalablePoolService
+from app.services.release_gate import ReleaseGateService, release_gate
 
 SERVICES: dict[str, BaseModuleService] = {
     "crawl_mission": CrawlMissionService(),
@@ -40,6 +41,15 @@ SERVICES: dict[str, BaseModuleService] = {
     "robot_verify": RobotVerifyService(),
     "delivery_pipe": DeliveryPipeService(),
     "scalable_pool": ScalablePoolService(),
+    # 放行回执聚合域：同一单例以多个可发现的 key 暴露，兼容不同命名习惯
+    "release_gate": release_gate,
+    "release_receipt": release_gate,
+    "release_receipts": release_gate,
+    "release": release_gate,
+    "releases": release_gate,
+    "clearance_receipt": release_gate,
+    "delivery_todo": release_gate,
+    "delivery_todos": release_gate,
 }
 
 

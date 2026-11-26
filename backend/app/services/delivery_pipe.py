@@ -10,10 +10,11 @@ import time
 from typing import Any
 
 from app.services.base import BaseModuleService
+from app.services.release_gate import ReleaseGateBridge, release_gate
 from app.store import store
 
 
-class DeliveryPipeService(BaseModuleService):
+class DeliveryPipeService(ReleaseGateBridge, BaseModuleService):
     MODULE = "delivery_pipe"
     ENTITY = "投递配置"
     OPERATION_TERM = "采集"
@@ -41,8 +42,22 @@ class DeliveryPipeService(BaseModuleService):
                              "method": values.get("投递方式", "")})
         return entry, []
 
-    def deliver(self, entry_id: int, data: list[dict[str, Any]], auto_retry: bool = True) -> dict[str, Any]:
-        """执行投递操作，支持自动重试。"""
+    def deliver(self, entry_id: int, data: list[dict[str, Any]], auto_retry: bool = True,
+                **release_kwargs: Any) -> dict[str, Any]:
+        """执行投递操作，支持自动重试。
+
+        若传入 permit_id/receipt/批次版本/receiver 等放行上下文，或显式
+        enforce_release=True，则改走放行回执核销状态机：没有当前有效许可身份
+        一律不能启动投递。不带这些参数时保留原有模拟投递行为（兼容旧调用）。
+        """
+        gated_keys = ("permit_id", "receipt_id", "receipt", "permit", "batch_key",
+                      "batch_no", "revision", "enforce_release")
+        if release_kwargs.get("enforce_release") or any(
+                release_kwargs.get(k) not in (None, "") for k in gated_keys if k != "enforce_release"):
+            release_kwargs.setdefault("pipe_id", entry_id)
+            verdict = release_gate.start_delivery(**release_kwargs)
+            verdict["status"] = "success" if verdict.get("ok") else "blocked"
+            return verdict
         entry = store.find(self.MODULE, entry_id)
         if entry is None:
             return {"status": "error", "reason": "配置不存在"}

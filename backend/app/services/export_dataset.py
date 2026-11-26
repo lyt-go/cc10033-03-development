@@ -11,10 +11,11 @@ import time
 from typing import Any
 
 from app.services.base import BaseModuleService
+from app.services.release_gate import ReleaseGateBridge
 from app.store import store
 
 
-class ExportDatasetService(BaseModuleService):
+class ExportDatasetService(ReleaseGateBridge, BaseModuleService):
     MODULE = "export_dataset"
     ENTITY = "导出任务"
     OPERATION_TERM = "采集"

@@ -79,3 +79,54 @@ npm run dev
 
 领域：数据工程
 子方向：数据采集、爬虫与RPA
+
+## 交接放行回执（导出 → 投递核销）
+
+导出批次生成/文件完成后，还必须有交接负责人针对「确定的批次版本 + 接收方」
+发起的放行回执，投递服务才能在投递管道的待发送行核销并启动投递。下载预检、
+导出完成都不能代替放行。
+
+### 业务规则
+
+- 批次更正产生新版本（`R1 → R2`），旧版本与旧回执、旧签收记录原样保留、可查证；
+  但旧许可身份不再是「当前有效放行」，不能再被核销启动新投递。
+- 回执作用域唯一指向 `批次(batch_key) + 版本(revision) + 接收方(receiver)`；
+  新接收方不能借用旧接收方的许可。
+- 领取/签收按 `(回执, 接收方)` 与 `request_id/idempotency_key` 幂等，重复提交原
+  领取请求返回同一领取/许可身份。
+- 核销与更正/领取之间用进程内锁做判定+落库（CAS），并发下只有当前有效放行能被核销。
+- 所有判定响应都带回执「许可身份」(`permit_id`)、`can_send/sendable`、
+  `needs_reconfirm`、`code`（如 `VERSION_SUPERSEDED` / `RECEIVER_MISMATCH` /
+  `RELEASE_REQUIRED` / `REDEEMED`）以及当前版本/当前回执，调用方据此判断能否发送、
+  是否还要请负责人复核确认。
+- 签批结果会回写到投递待发送行的「签批结果」列；签批返回时若版本已变，导出页会
+  提示需要复核的新版本，同时仍可打开原批次回执（支持 `?receipt=<permit_id>` 定位）。
+
+### 页面
+
+- 数据导出 `/export_dataset`：顶部「交接放行 · 放行回执」面板，选择批次与接收方后
+  发起放行、更正批次、领取/签收、签批、查看旧签收与原批次回执。
+- 投递管道 `/delivery_pipe`：顶部「放行核销 · 待发送行」面板，按 R1/R2 版本提交、
+  在待发送行录入许可身份后核销或启动投递，并用「实际可发送 / 实际不可发送」标记两版。
+
+### 主要接口（均有中英文/单复数别名，详见 `app/routers/release.py`）
+
+```text
+POST /api/release/receipts           发起放行（batch/export_id + receiver）
+GET  /api/release/receipts[/{id}]    回执列表/详情（含效力判定）
+POST /api/release/correct            更正批次生成 R2
+POST /api/release/claim              领取/签收（幂等）
+POST /api/release/approve            签批通过/驳回（回写投递待办）
+POST /api/release/redeem             投递服务核销
+POST /api/delivery/start             核销并启动投递（可按 batch+revision+receiver）
+GET  /api/release/evaluate           只判定当前能否发送
+GET  /api/delivery/todos             投递待发送行（含回执标记与判定）
+POST /api/release/precheck           下载预检（始终提示 release_required）
+GET  /api/release/overview           批次/回执/签收/待办/投递总览
+```
+
+通用动作接口同样支持：对 `export_dataset` / `delivery_pipe` 等模块
+`POST /api/{module}/{id}/actions`，`action` 可取
+`发起放行 / 更正批次 / 领取 / 签收 / 签批通过 / 驳回 / 核销 / 启动投递`，
+附加字段（`receiver/permit_id/request_id/revision/...`）会一并传入状态机。
+

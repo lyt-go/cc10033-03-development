@@ -12,6 +12,13 @@ from app.seed import SEED_ROWS
 
 
 class Store:
+    # 放行回执聚合域使用的内部表，不属于 18 个业务模块，
+    # 不计入健康检查模块数与运营概览。
+    INTERNAL_TABLES = frozenset({
+        "release_batches", "release_receipts", "release_claims",
+        "delivery_todos", "delivery_records",
+    })
+
     def __init__(self) -> None:
         self._tables: dict[str, list[dict[str, Any]]] = {
             name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
@@ -24,7 +31,7 @@ class Store:
     # ── 基础存取 ──────────────────────────────
 
     def module_names(self) -> list[str]:
-        return sorted(self._tables)
+        return sorted(name for name in self._tables if name not in self.INTERNAL_TABLES)
 
     def rows(self, module: str) -> list[dict[str, Any]]:
         return self._tables.setdefault(module, [])

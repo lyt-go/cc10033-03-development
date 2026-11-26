@@ -15,6 +15,9 @@
       </div>
     </header>
 
+    <ReleasePanel v-if="meta.key === 'export_dataset'" :tick="gateTick" />
+    <DeliveryReleasePanel v-if="meta.key === 'delivery_pipe'" :tick="gateTick" />
+
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
@@ -94,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 
 import {
   createEntry,
@@ -104,6 +107,8 @@ import {
   runAction as applyAction,
 } from '@/api/backend-service'
 import type { EntryRow } from '@/data/types'
+import ReleasePanel from '@/components/ReleasePanel.vue'
+import DeliveryReleasePanel from '@/components/DeliveryReleasePanel.vue'
 
 const props = defineProps<{ moduleKey: string }>()
 const meta = moduleMeta(props.moduleKey)
@@ -115,6 +120,12 @@ const filterFields = meta.fields.slice(0, 3)
 const showCreate = ref(false)
 const creating = ref(false)
 const createValues = ref<Record<string, string>>({})
+const gateTick = ref(0)
+
+function onGateChanged() {
+  gateTick.value += 1
+  void reload()
+}
 const stats = computed(() => [
   { label: meta.metrics[0], value: total.value },
   { label: meta.metrics[1], value: rows.value.filter((row) => row.status === meta.statuses[1]).length },
@@ -157,6 +168,7 @@ async function submitCreate() {
     const result = await createEntry(meta.key, createValues.value)
     if (!result.ok) throw new Error(result.message)
     showCreate.value = false
+    gateTick.value += 1
     await reload()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '登记失败'
@@ -170,6 +182,7 @@ async function runAction(action: string, row: EntryRow) {
   try {
     const result = await applyAction(meta.key, Number(row.id), action)
     if (!result.ok) throw new Error(result.message)
+    gateTick.value += 1
     await reload()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '操作失败'
@@ -187,5 +200,12 @@ async function reload() {
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  window.addEventListener('gate-changed', onGateChanged)
+  void reload()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('gate-changed', onGateChanged)
+})
 </script>
